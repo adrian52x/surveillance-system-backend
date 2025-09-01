@@ -17,7 +17,7 @@ export function setupSocketHandlers(io: Server) {
             handleDetection(socket, io, detectionData);
         });
 
-        // Handle disconnect
+        // Handle disconnect - built-in Socket.IO event
         socket.on('disconnect', () => {
             handleDisconnect(socket, io);
         });
@@ -44,7 +44,7 @@ function handleJoinSession(socket: Socket, io: Server, data: JoinSessionData) {
 
     console.log(`👤 User joined: ${data.userName} (${userId})`);
 
-    // Broadcast to all OTHER clients that a new user joined
+    // Tell OTHER people that this user joined
     socket.broadcast.emit('user-joined', {
         userId: userId,
         userName: data.userName,
@@ -58,7 +58,7 @@ function handleJoinSession(socket: Socket, io: Server, data: JoinSessionData) {
         connectedUsers: dataService.getUsersCount()
     });
 
-    // Send ALL users list to the new user
+    // Tell ONLY this user that they successfully joined
     const allUsers = dataService.getAllUsers().map(user => ({
         id: user.id,
         name: user.name,
