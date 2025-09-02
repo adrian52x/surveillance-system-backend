@@ -1,6 +1,6 @@
 import { Server, Socket } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
-import { User, Detection, JoinSessionData, DetectionData, SocketData } from '../types';
+import { User, Detection, JoinSessionData, DetectionData, VideoFrameData, SocketData } from '../types';
 import { dataService } from '../services/dataService';
 
 export function setupSocketHandlers(io: Server) {
@@ -17,12 +17,40 @@ export function setupSocketHandlers(io: Server) {
             handleDetection(socket, io, detectionData);
         });
 
+        // Handle video frame from user
+        socket.on('video-frame', (frameData: VideoFrameData) => {
+            handleVideoFrame(socket, io, frameData);
+        });
+
+        // Handle stop video stream from user
+        socket.on('stop-video-stream', (data: { userId: string; userName: string }) => {
+            handleStopVideoStream(socket, io, data);
+        });
+
+        // Handle request for users list (for admin dashboard)
+        socket.on('request-users-list', () => {
+            handleRequestUsersList(socket);
+        });
+
         // Handle disconnect - built-in Socket.IO event
         socket.on('disconnect', () => {
             handleDisconnect(socket, io);
         });
 
     });
+}
+
+// Helper function to send users list - eliminates code duplication
+function sendUsersList(socket: Socket, context: string) {
+    const allUsers = dataService.getAllUsers().map(user => ({
+        id: user.id,
+        name: user.name,
+        isActive: user.isActive,
+        joinedAt: user.joinedAt
+    }));
+    
+    socket.emit('users-list', allUsers);
+    console.log(`📋 Sent users list ${context}: ${allUsers.length} users`);
 }
 
 function handleJoinSession(socket: Socket, io: Server, data: JoinSessionData) {
@@ -59,15 +87,7 @@ function handleJoinSession(socket: Socket, io: Server, data: JoinSessionData) {
     });
 
     // Tell ONLY this user that they successfully joined
-    const allUsers = dataService.getAllUsers().map(user => ({
-        id: user.id,
-        name: user.name,
-        isActive: user.isActive,
-        joinedAt: user.joinedAt
-    }));
-    
-    socket.emit('users-list', allUsers);
-    console.log(`📋 Sent users list to ${data.userName}: ${allUsers.length} users, socketID: ${socket.id}`);
+    sendUsersList(socket, `to ${data.userName} after joining`);
 }
 
 function handleDetection(socket: Socket, io: Server, detectionData: DetectionData) {
@@ -125,4 +145,52 @@ function handleDisconnect(socket: Socket, io: Server) {
     }
 
     console.log(`🔌 Client disconnected: ${socket.id}`);
+}
+
+function handleVideoFrame(socket: Socket, io: Server, frameData: VideoFrameData) {
+    const socketData = socket.data as SocketData;
+    const userId = socketData.userId;
+    const userName = socketData.userName;
+
+    if (!userId || !userName) {
+        socket.emit('error', { message: 'User not in session' });
+        return;
+    }
+
+    // Only log every 10th frame to reduce console spam
+    if (Math.random() < 0.1) {
+        console.log(`📹 Video frame from ${userName}`);
+    }
+
+    // Broadcast video frame to all other clients with minimal processing
+    socket.broadcast.emit('video-frame', {
+        userId: userId,
+        userName: userName,
+        frameData: frameData.frameData,
+        timestamp: new Date().toISOString()
+    });
+}
+
+function handleStopVideoStream(socket: Socket, io: Server, data: { userId: string; userName: string }) {
+    const socketData = socket.data as SocketData;
+    const userId = socketData.userId;
+    const userName = socketData.userName;
+
+    if (!userId || !userName) {
+        socket.emit('error', { message: 'User not in session' });
+        return;
+    }
+
+    console.log(`⏹️ Video stream stopped from ${userName}`);
+
+    // Broadcast stop video stream to all other clients
+    socket.broadcast.emit('stop-video-stream', {
+        userId: userId,
+        userName: userName
+    });
+}
+
+function handleRequestUsersList(socket: Socket) {
+    console.log(`📋 Admin dashboard requesting users list`);
+    sendUsersList(socket, 'to admin dashboard');
 }

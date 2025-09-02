@@ -27,6 +27,13 @@ export interface DetectionData {
   bbox: [number, number, number, number];
 }
 
+export interface VideoFrameData {
+  userId: string;
+  userName: string;
+  frameData: string;
+  timestamp: string;
+}
+
 export interface SocketData {
   userId?: string;
   userName?: string;
