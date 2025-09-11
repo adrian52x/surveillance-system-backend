@@ -11,9 +11,15 @@ export interface Detection {
   userId: string;
   userName: string;
   objectClass: string;
-  confidence: number;
-  bbox: [number, number, number, number];
-  timestamp: Date;
+  // confidence: number;
+  // bbox: [number, number, number, number];
+  timestampInitial: Date;
+  timestampFinal: Date;
+
+}
+
+export interface DetectionPayload {
+  objectClass: string;
 }
 
 export interface JoinSessionData {
@@ -21,11 +27,6 @@ export interface JoinSessionData {
   userName: string;
 }
 
-export interface DetectionData {
-  objectClass: string;
-  confidence: number;
-  bbox: [number, number, number, number];
-}
 
 export interface VideoFrameData {
   userId: string;

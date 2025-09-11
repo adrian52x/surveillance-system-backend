@@ -1,7 +1,15 @@
 import { Server, Socket } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
-import { User, Detection, JoinSessionData, DetectionData, VideoFrameData, SocketData } from '../types';
+import { User, Detection, DetectionPayload, JoinSessionData, VideoFrameData, SocketData } from '../types';
 import { dataService } from '../services/dataService';
+
+// Simple person detection counter
+const personCounters: Record<string, { count: number; firstDetection: Date }> = {};
+
+// Detection confirmation constants
+const REQUIRED_DETECTIONS = 5;  // Number of detections needed to confirm
+const TIME_WINDOW_SECONDS = 10;  // Maximum time window in seconds
+const TRACKING_OBJECT = 'person'; // Object class to track
 
 export function setupSocketHandlers(io: Server) {
     io.on('connection', (socket: Socket) => {
@@ -13,7 +21,7 @@ export function setupSocketHandlers(io: Server) {
         });
 
         // Handle new detection from user
-        socket.on('detection', (detectionData: DetectionData) => {
+        socket.on('detection', (detectionData: DetectionPayload) => {
             handleDetection(socket, io, detectionData);
         });
 
@@ -90,7 +98,7 @@ function handleJoinSession(socket: Socket, io: Server, data: JoinSessionData) {
     sendUsersList(socket, `to ${data.userName} after joining`);
 }
 
-function handleDetection(socket: Socket, io: Server, detectionData: DetectionData) {
+function handleDetection(socket: Socket, io: Server, detectionData: DetectionPayload) {
     const socketData = socket.data as SocketData;
     const userId = socketData.userId;
     const userName = socketData.userName;
@@ -100,31 +108,73 @@ function handleDetection(socket: Socket, io: Server, detectionData: DetectionDat
         return;
     }
 
-    const detection: Detection = {
-        id: uuidv4(),
-        userId: userId,
-        userName: userName,
-        objectClass: detectionData.objectClass,
-        confidence: detectionData.confidence,
-        bbox: detectionData.bbox,
-        timestamp: new Date()
-    };
+    // Only track person detections
+    if (detectionData.objectClass === TRACKING_OBJECT) {
+        const userKey = userId;
+        const now = new Date();
+        
+        if (personCounters[userKey]) {
+            // Update existing counter
+            personCounters[userKey].count++;
+            
+            const timeRange = now.getTime() - personCounters[userKey].firstDetection.getTime();
+            const timeInSeconds = timeRange / 1000;
+            
+            console.log(`👀 Person detection #${personCounters[userKey].count} from ${userName} (${timeInSeconds.toFixed(1)}s)`);
+            
+            // Check if we have required detections and they're within time window
+            if (personCounters[userKey].count >= REQUIRED_DETECTIONS && timeInSeconds <= TIME_WINDOW_SECONDS) {
+                // CONFIRMED PERSON!
+                console.log(`🚨 PERSON CONFIRMED!`);
+                console.log(`👤 User: ${userName}`);
+                console.log(`📊 Detections: ${personCounters[userKey].count} in ${timeInSeconds.toFixed(1)} seconds`);
+                console.log(`🕐 Time: ${personCounters[userKey].firstDetection.toLocaleTimeString()} --- ${now.toLocaleTimeString()}`);
+                console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+                
+                // TODO: Add Discord notification here later
+                
 
-    // Store detection
-    dataService.addDetection(detection);
+                // Create and broadcast detection
+                const detection: Detection = {
+                    id: uuidv4(),
+                    userId: userId,
+                    userName: userName,
+                    objectClass: detectionData.objectClass,
+                    timestampInitial: personCounters[userKey]?.firstDetection,
+                    timestampFinal: now
+                };
 
-    console.log(`🎯 Detection from ${userName}: ${detectionData.objectClass} (${(detectionData.confidence * 100).toFixed(1)}%)`);
+                // Reset counter
+                delete personCounters[userKey];
 
-    // Broadcast detection to all connected clients
-    io.emit('new-detection', {
-        id: detection.id,
-        userId: userId,
-        userName: userName,
-        objectClass: detectionData.objectClass,
-        confidence: detectionData.confidence,
-        bbox: detectionData.bbox,
-        timestamp: detection.timestamp.toISOString()
-    });
+                //dataService.addDetection(detection);
+
+                socket.emit('new-detection', detection);
+                
+                // socket.emit('person-confirmed', {
+                //     message: `Person confirmed! ${personCounters[userKey]?.count || 10} detections in ${timeInSeconds.toFixed(1)}s`
+                // });
+                
+            } else if (timeInSeconds > 10) {
+                // Time window exceeded, reset counter
+                console.log(`⏰ Time window exceeded for ${userName}, resetting counter`);
+                personCounters[userKey] = {
+                    count: 1,
+                    firstDetection: now
+                };
+            }
+        } else {
+            // Start new counter
+            personCounters[userKey] = {
+                count: 1,
+                firstDetection: now
+            };
+            console.log(`🔍 Started counting person detections for ${userName}`);
+        }
+    } else {
+        // Non-person detection - just log (optional)
+        console.log(`📋 Non-person detection from ${userName}: ${detectionData.objectClass}`);
+    }
 }
 
 function handleDisconnect(socket: Socket, io: Server) {
@@ -134,6 +184,13 @@ function handleDisconnect(socket: Socket, io: Server) {
 
     if (userId && dataService.hasUser(userId)) {
         dataService.removeUser(userId);
+        
+        // Clean up person counter for this user
+        if (personCounters[userId]) {
+            delete personCounters[userId];
+            console.log(`🧹 Cleared person counter for ${userName}`);
+        }
+        
         console.log(`👋 User disconnected: ${userName} (${userId})`);
 
         // Broadcast user left
@@ -158,9 +215,9 @@ function handleVideoFrame(socket: Socket, io: Server, frameData: VideoFrameData)
     }
 
     // Only log every 10th frame to reduce console spam
-    if (Math.random() < 0.1) {
-        console.log(`📹 Video frame from ${userName}`);
-    }
+    // if (Math.random() < 0.1) {
+    //     console.log(`📹 Video frame from ${userName}`);
+    // }
 
     // Broadcast video frame to all other clients with minimal processing
     socket.broadcast.emit('video-frame', {
