@@ -2,12 +2,14 @@ import { Server, Socket } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
 import { User, Detection, DetectionPayload, JoinSessionData, VideoFrameData, SocketData } from '../types';
 import { dataService } from '../services/dataService';
+import { discordService } from '../services/discordService';
+
 
 // Simple person detection counter
 const personCounters: Record<string, { count: number; firstDetection: Date }> = {};
 
 // Detection confirmation constants
-const REQUIRED_DETECTIONS = 5;  // Number of detections needed to confirm
+const REQUIRED_DETECTIONS = 10;  // Number of detections needed to confirm
 const TIME_WINDOW_SECONDS = 10;  // Maximum time window in seconds
 const TRACKING_OBJECT = 'person'; // Object class to track
 
@@ -98,7 +100,7 @@ function handleJoinSession(socket: Socket, io: Server, data: JoinSessionData) {
     sendUsersList(socket, `to ${data.userName} after joining`);
 }
 
-function handleDetection(socket: Socket, io: Server, detectionData: DetectionPayload) {
+async function handleDetection(socket: Socket, io: Server, detectionData: DetectionPayload) {
     const socketData = socket.data as SocketData;
     const userId = socketData.userId;
     const userName = socketData.userName;
@@ -131,8 +133,18 @@ function handleDetection(socket: Socket, io: Server, detectionData: DetectionPay
                 console.log(`🕐 Time: ${personCounters[userKey].firstDetection.toLocaleTimeString()} --- ${now.toLocaleTimeString()}`);
                 console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
                 
-                // TODO: Add Discord notification here later
+                // Store initial detection time before resetting counter
+                const initialTimestamp = personCounters[userKey].firstDetection;
                 
+                // Reset counter IMMEDIATELY to prevent duplicate notifications
+                delete personCounters[userKey];
+                
+                // Send Discord notification
+                await discordService.sendPersonDetectionAlert(
+                    userName,
+                    initialTimestamp,
+                    now
+                );
 
                 // Create and broadcast detection
                 const detection: Detection = {
@@ -140,12 +152,9 @@ function handleDetection(socket: Socket, io: Server, detectionData: DetectionPay
                     userId: userId,
                     userName: userName,
                     objectClass: detectionData.objectClass,
-                    timestampInitial: personCounters[userKey]?.firstDetection,
+                    timestampInitial: initialTimestamp,
                     timestampFinal: now
                 };
-
-                // Reset counter
-                delete personCounters[userKey];
 
                 //dataService.addDetection(detection);
 
