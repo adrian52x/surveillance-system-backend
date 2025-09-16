@@ -8,6 +8,9 @@ import { discordService } from '../services/discordService';
 // Simple person detection counter
 const personCounters: Record<string, { count: number; firstDetection: Date }> = {};
 
+// Store latest frame for each user
+const latestFrames: Record<string, string> = {};
+
 // Detection confirmation constants
 const REQUIRED_DETECTIONS = 10;  // Number of detections needed to confirm
 const TIME_WINDOW_SECONDS = 10;  // Maximum time window in seconds
@@ -112,38 +115,39 @@ async function handleDetection(socket: Socket, io: Server, detectionData: Detect
 
     // Only track person detections
     if (detectionData.objectClass === TRACKING_OBJECT) {
-        const userKey = userId;
         const now = new Date();
         
-        if (personCounters[userKey]) {
+        if (personCounters[userId]) {
             // Update existing counter
-            personCounters[userKey].count++;
+            personCounters[userId].count++;
             
-            const timeRange = now.getTime() - personCounters[userKey].firstDetection.getTime();
+            const timeRange = now.getTime() - personCounters[userId].firstDetection.getTime();
             const timeInSeconds = timeRange / 1000;
             
-            console.log(`👀 Person detection #${personCounters[userKey].count} from ${userName} (${timeInSeconds.toFixed(1)}s)`);
+            console.log(`👀 Person detection #${personCounters[userId].count} from ${userName} (${timeInSeconds.toFixed(1)}s)`);
             
             // Check if we have required detections and they're within time window
-            if (personCounters[userKey].count >= REQUIRED_DETECTIONS && timeInSeconds <= TIME_WINDOW_SECONDS) {
+            if (personCounters[userId].count >= REQUIRED_DETECTIONS && timeInSeconds <= TIME_WINDOW_SECONDS) {
                 // CONFIRMED PERSON!
                 console.log(`🚨 PERSON CONFIRMED!`);
                 console.log(`👤 User: ${userName}`);
-                console.log(`📊 Detections: ${personCounters[userKey].count} in ${timeInSeconds.toFixed(1)} seconds`);
-                console.log(`🕐 Time: ${personCounters[userKey].firstDetection.toLocaleTimeString()} --- ${now.toLocaleTimeString()}`);
+                console.log(`📊 Detections: ${personCounters[userId].count} in ${timeInSeconds.toFixed(1)} seconds`);
+                console.log(`🕐 Time: ${personCounters[userId].firstDetection.toLocaleTimeString()} --- ${now.toLocaleTimeString()}`);
                 console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
                 
                 // Store initial detection time before resetting counter
-                const initialTimestamp = personCounters[userKey].firstDetection;
+                const initialTimestamp = personCounters[userId].firstDetection;
                 
                 // Reset counter IMMEDIATELY to prevent duplicate notifications
-                delete personCounters[userKey];
+                delete personCounters[userId];
                 
-                // Send Discord notification
+                // Send Discord notification with latest frame (if available)
+                const latestFrame = latestFrames[userId];
                 await discordService.sendPersonDetectionAlert(
                     userName,
                     initialTimestamp,
-                    now
+                    now,
+                    latestFrame
                 );
 
                 // Create and broadcast detection
@@ -167,14 +171,14 @@ async function handleDetection(socket: Socket, io: Server, detectionData: Detect
             } else if (timeInSeconds > 10) {
                 // Time window exceeded, reset counter
                 console.log(`⏰ Time window exceeded for ${userName}, resetting counter`);
-                personCounters[userKey] = {
+                personCounters[userId] = {
                     count: 1,
                     firstDetection: now
                 };
             }
         } else {
             // Start new counter
-            personCounters[userKey] = {
+            personCounters[userId] = {
                 count: 1,
                 firstDetection: now
             };
@@ -200,6 +204,12 @@ function handleDisconnect(socket: Socket, io: Server) {
             console.log(`🧹 Cleared person counter for ${userName}`);
         }
         
+        // Clean up latest frame for this user
+        if (latestFrames[userId]) {
+            delete latestFrames[userId];
+            console.log(`🧹 Cleared latest frame for ${userName}`);
+        }
+        
         console.log(`👋 User disconnected: ${userName} (${userId})`);
 
         // Broadcast user left
@@ -222,6 +232,9 @@ function handleVideoFrame(socket: Socket, io: Server, frameData: VideoFrameData)
         socket.emit('error', { message: 'User not in session' });
         return;
     }
+
+    // Store the latest frame for this user
+    latestFrames[userId] = frameData.frameData;
 
     // Only log every 10th frame to reduce console spam
     // if (Math.random() < 0.1) {

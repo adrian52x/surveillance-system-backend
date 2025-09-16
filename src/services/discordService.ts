@@ -35,7 +35,8 @@ class DiscordService {
     async sendPersonDetectionAlert(
         userName: string, 
         timestampInitial: Date, 
-        timestampFinal: Date
+        timestampFinal: Date,
+        frameData?: string
     ): Promise<void> {
         const webhookUrl = this.getWebhookUrl();
         if (!webhookUrl) {
@@ -69,21 +70,58 @@ class DiscordService {
         };
 
         try {
-            const response = await fetch(webhookUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(message)
-            });
-
-            if (response.ok) {
-                console.log('✅ Discord notification sent successfully');
+            if (frameData) {
+                // Send with image attachment using FormData
+                await this.sendWithImage(webhookUrl, message, frameData, userName, timestampFinal);
             } else {
-                console.error('❌ Discord notification failed:', response.status, response.statusText);
+                // Send without image (JSON only)
+                await this.sendWithoutImage(webhookUrl, message);
             }
         } catch (error) {
             console.error('❌ Failed to send Discord notification:', error);
+        }
+    }
+
+    private async sendWithImage(webhookUrl: string, message: DiscordMessage, frameData: string, userName: string, timestamp: Date): Promise<void> {
+        // Convert base64 to buffer
+        const base64Data = frameData.replace(/^data:image\/[a-z]+;base64,/, '');
+        const imageBuffer = Buffer.from(base64Data, 'base64');
+        
+        // Create FormData
+        const formData = new FormData();
+        
+        // Add the JSON payload
+        formData.append('payload_json', JSON.stringify(message));
+        
+        // Add the image file
+        const blob = new Blob([imageBuffer], { type: 'image/jpeg' });
+        formData.append('file', blob, `detection_${userName}_${timestamp.toISOString().replace(/[:.]/g, '-')}.jpg`);
+
+        const response = await fetch(webhookUrl, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (response.ok) {
+            console.log('✅ Discord notification with image sent successfully');
+        } else {
+            console.error('❌ Discord notification with image failed:', response.status, response.statusText);
+        }
+    }
+
+    private async sendWithoutImage(webhookUrl: string, message: DiscordMessage): Promise<void> {
+        const response = await fetch(webhookUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(message)
+        });
+
+        if (response.ok) {
+            console.log('✅ Discord notification sent successfully');
+        } else {
+            console.error('❌ Discord notification failed:', response.status, response.statusText);
         }
     }
 }
