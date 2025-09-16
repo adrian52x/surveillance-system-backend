@@ -14,7 +14,8 @@ src/
 ├── sockets/
 │   └── socketHandlers.ts      # WebSocket event handlers
 └── services/
-    └── dataService.ts         # Data management service
+    ├── dataService.ts         # Data management service
+    └── discordService.ts      # Discord notifications with images
 ```
 
 ## 🏗️ Architecture Benefits
@@ -51,7 +52,9 @@ src/
 ### **Client → Server**
 - `join-session`: User joins with name
 - `detection`: New object detection data
-- `ping`: Connection test
+- `video-frame`: Live video frame (base64)
+- `stop-video-stream`: Stop broadcasting video
+- `request-users-list`: Admin requests user list
 - `disconnect`: User leaves
 
 ### **Server → Client**
@@ -60,7 +63,22 @@ src/
 - `session-joined`: Confirmation of join
 - `users-list`: All connected users
 - `new-detection`: Real-time detection
-- `pong`: Ping response
+- `video-frame`: Live video from other users
+- `stop-video-stream`: User stopped streaming
+
+## 🔔 Discord Notifications
+
+### **Person Detection Alerts**
+- Automatically sends Discord notifications when person detected
+- Includes screenshot from latest video frame
+- Uses singleton pattern for service management
+- Environment variable: `DISCORD_WEBHOOK_URL`
+
+### **Image Processing Flow**
+1. **Frontend**: Canvas → `toDataURL('image/jpeg')` → Base64 string
+2. **Backend**: Receives `data:image/jpeg;base64,<data>`
+3. **Processing**: Strips prefix → Converts to Buffer → Creates Blob
+4. **Discord**: Uploads via FormData to webhook endpoint
 
 ## 🔧 Usage
 
