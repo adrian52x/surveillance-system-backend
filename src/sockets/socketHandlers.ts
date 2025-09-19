@@ -45,6 +45,11 @@ export function setupSocketHandlers(io: Server) {
             handleRequestUsersList(socket);
         });
 
+        // Handle Discord notifications toggle (Admin only)
+        socket.on('toggle-discord-notifications', (data: { enabled: boolean }) => {
+            handleToggleDiscordNotifications(socket, data);
+        });
+
         // Handle disconnect - built-in Socket.IO event
         socket.on('disconnect', () => {
             handleDisconnect(socket, io);
@@ -272,4 +277,20 @@ function handleStopVideoStream(socket: Socket, io: Server, data: { userId: strin
 function handleRequestUsersList(socket: Socket) {
     console.log(`📋 Admin dashboard requesting users list`);
     sendUsersList(socket, 'to admin dashboard');
+}
+
+function handleToggleDiscordNotifications(socket: Socket, data: { enabled: boolean }) {
+    const socketData = socket.data as SocketData;
+    const userName = socketData.userName;
+
+    // Update Discord service state
+    discordService.setNotificationsEnabled(data.enabled);
+    
+    console.log(`🔔 Admin ${userName} ${data.enabled ? 'enabled' : 'disabled'} Discord notifications`);
+    
+    // Confirm to the admin
+    socket.emit('discord-notifications-toggled', { 
+        enabled: data.enabled,
+        message: `Discord notifications ${data.enabled ? 'enabled' : 'disabled'}` 
+    });
 }

@@ -14,6 +14,7 @@ interface DiscordMessage {
 
 class DiscordService {
     private static instance: DiscordService;
+    private notificationsEnabled: boolean = true; // Default enabled
 
     private constructor() {}
 
@@ -22,6 +23,14 @@ class DiscordService {
             DiscordService.instance = new DiscordService();
         }
         return DiscordService.instance;
+    }
+
+    public setNotificationsEnabled(enabled: boolean): void {
+        this.notificationsEnabled = enabled;
+    }
+
+    public isNotificationsEnabled(): boolean {
+        return this.notificationsEnabled;
     }
 
     private getWebhookUrl(): string {
@@ -38,6 +47,12 @@ class DiscordService {
         timestampFinal: Date,
         frameData?: string
     ): Promise<void> {
+        // Check if notifications are enabled
+        if (!this.notificationsEnabled) {
+            console.log('🔇 Discord notifications are disabled, skipping alert');
+            return;
+        }
+
         const webhookUrl = this.getWebhookUrl();
         if (!webhookUrl) {
             return;
